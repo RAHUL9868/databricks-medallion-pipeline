@@ -24,7 +24,12 @@ TESTS_ROOT = Path(__file__).resolve().parent
 if str(TESTS_ROOT) not in sys.path:
     sys.path.insert(0, str(TESTS_ROOT))
 
-from bronze.bronze_ingest import add_bronze_metadata, align_to_bronze_schema, read_source_csv
+from bronze.bronze_ingest import (
+    add_bronze_metadata,
+    align_to_bronze_schema,
+    path_exists,
+    read_source_csv,
+)
 from bronze.bronze_schemas import ENTITY_SCHEMAS, SOURCE_COLUMN_NAMES
 from data_generation.generate_sample_data import CUSTOMER_CSV_COLUMNS, generate_all
 from quality_expectations import CUSTOMER_TOTAL_COUNT, DEFAULT_GENERATION_SEED
@@ -177,3 +182,19 @@ class TestBronzeSampleDataShape:
             expected=True,
             actual=blank_email_count > 0,
         ).assert_pass()
+
+
+class TestPathExists:
+    def test_local_file_uri_without_jvm(self, spark: SparkSession, tmp_path: Path) -> None:
+        """path_exists must work for file:/ URIs without spark._jvm (serverless-safe)."""
+        csv_path = tmp_path / "probe.csv"
+        csv_path.write_text("a\n", encoding="utf-8")
+        uri = csv_path.resolve().as_uri()
+
+        assert path_exists(spark, uri) is True
+        assert path_exists(spark, str(csv_path)) is True
+        assert path_exists(spark, str(tmp_path / "missing.csv")) is False
+
+    def test_missing_local_file_uri(self, spark: SparkSession, tmp_path: Path) -> None:
+        missing_uri = (tmp_path / "does_not_exist.csv").resolve().as_uri()
+        assert path_exists(spark, missing_uri) is False

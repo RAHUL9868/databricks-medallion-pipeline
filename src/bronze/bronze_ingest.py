@@ -14,6 +14,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, List, Optional
+from urllib.parse import urlparse
 
 from pyspark.sql import DataFrame, SparkSession, Window
 from pyspark.sql import functions as F
@@ -105,14 +106,92 @@ def normalize_source_path(path: str) -> str:
     return path
 
 
+_REMOTE_PATH_PREFIXES = ("dbfs:", "s3:", "abfss:", "gs:", "wasbs:", "hdfs:")
+
+
+def _local_filesystem_path(path: str) -> Optional[Path]:
+    """
+    Return a driver-local Path when ``path`` refers to the local filesystem.
+
+    Supports ``file://`` / ``file:/`` URIs and plain local paths. Returns None for
+    remote/object-store schemes (dbfs, s3, etc.).
+    """
+    if path.startswith("file:"):
+        return Path(urlparse(path).path)
+    if path.startswith("/dbfs/"):
+        return None
+    if any(path.startswith(prefix) for prefix in _REMOTE_PATH_PREFIXES):
+        return None
+    return Path(path)
+
+
+def _path_exists_dbutils(spark: SparkSession, path: str) -> Optional[bool]:
+    """
+    Use Databricks DBUtils when available (serverless-safe).
+
+    Returns None when DBUtils is not on the classpath.
+    """
+    try:
+        from pyspark.dbutils import DBUtils
+    except ImportError:
+        return None
+
+    dbutils = DBUtils(spark)
+    try:
+        dbutils.fs.ls(path)
+        return True
+    except Exception as exc:
+        message = str(exc).lower()
+        if any(
+            token in message
+            for token in ("does not exist", "pathnotfound", "file not found", "not found")
+        ):
+            return False
+        raise
+
+
+def _path_exists_spark_read(spark: SparkSession, path: str) -> bool:
+    """Probe path readability without ``spark._jvm`` (Databricks serverless-safe)."""
+    try:
+        spark.read.format("binaryFile").load(path).limit(1).count()
+        return True
+    except AnalysisException as exc:
+        message = str(exc).lower()
+        if any(
+            token in message
+            for token in (
+                "path does not exist",
+                "does not exist",
+                "path_not_found",
+                "unable to infer",
+            )
+        ):
+            return False
+        raise
+    except Exception as exc:
+        message = str(exc).lower()
+        if "does not exist" in message or "path_not_found" in message:
+            return False
+        raise
+
+
 def path_exists(spark: SparkSession, path: str) -> bool:
-    """Check whether a path exists using the active Spark filesystem."""
+    """
+    Check whether a path exists using the active Spark filesystem.
+
+    Does not use ``spark._jvm`` so this works on Databricks serverless compute.
+    """
     normalized = normalize_source_path(path)
-    jvm = spark._jvm
-    hadoop_conf = spark._jsc.hadoopConfiguration()
-    fs_path = jvm.org.apache.hadoop.fs.Path(normalized)
-    fs = fs_path.getFileSystem(hadoop_conf)
-    return bool(fs.exists(fs_path))
+
+    local_path = _local_filesystem_path(normalized)
+    if local_path is not None:
+        return local_path.exists()
+
+    dbutils_result = _path_exists_dbutils(spark, normalized)
+    if dbutils_result is not None:
+        return dbutils_result
+
+    return _path_exists_spark_read(spark, normalized)
 
 
 def validate_source_file(spark: SparkSession, source_path: str, entity: str) -> str:

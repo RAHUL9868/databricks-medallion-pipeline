@@ -204,6 +204,7 @@ print("Repo files present")
 | Pull shows no changes | Confirm push reached GitHub; check branch is `main` |
 | `ModuleNotFoundError: config` | `sys.path.insert(0, ".../src")` or run from repo root with `PYTHONPATH=src` |
 | `Source file not found` | Upload CSVs to `dbfs:/FileStore/ecommerce/data` |
+| `[JVM_ATTRIBUTE_NOT_SUPPORTED] spark._jvm` | Pull latest `main` (Bronze `path_exists` is serverless-safe) or use a dedicated cluster |
 | Permission denied on push from Databricks | Use PAT with repo scope or push from local git only |
 
 ---
