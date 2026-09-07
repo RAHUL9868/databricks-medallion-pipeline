@@ -151,17 +151,49 @@ def deduplicate_qualifying_orders(orders_df: DataFrame) -> DataFrame:
     )
 
 
+def build_valid_deduplicated_customers(spark: SparkSession, config: PipelineConfig) -> DataFrame:
+    """Valid customers at one row per customer_id (matches Gold valid_customers CTE)."""
+    customers = spark.table(_table_name(config, "silver_customers_table"))
+    window = Window.partitionBy("customer_id").orderBy(F.col("_source_row_num"))
+    return (
+        customers.filter(
+            (F.col("dq_is_valid") == F.lit(True)) & F.col("customer_id").isNotNull(),
+        )
+        .withColumn("_dedupe_rank", F.row_number().over(window))
+        .filter(F.col("_dedupe_rank") == 1)
+        .select("customer_id")
+    )
+
+
+def build_valid_deduplicated_products(spark: SparkSession, config: PipelineConfig) -> DataFrame:
+    """Valid products at one row per product_id (matches Gold valid_products CTE)."""
+    products = spark.table(_table_name(config, "silver_products_table"))
+    window = Window.partitionBy("product_id").orderBy(F.col("_source_row_num"))
+    return (
+        products.filter(
+            (F.col("dq_is_valid") == F.lit(True)) & F.col("product_id").isNotNull(),
+        )
+        .withColumn("_dedupe_rank", F.row_number().over(window))
+        .filter(F.col("_dedupe_rank") == 1)
+        .select("product_id")
+    )
+
+
 def build_qualifying_silver_orders(
     spark: SparkSession,
     config: PipelineConfig,
     require_customer_id: bool = False,
     require_product_id: bool = False,
     require_order_date: bool = False,
+    require_valid_customer: bool = False,
+    require_valid_product: bool = False,
 ) -> DataFrame:
     """
     Build the Silver order set used for Gold revenue reconciliation.
 
     Matches Gold SQL filters: valid, Completed, non-null total_amount, deduped.
+    When ``require_valid_customer`` or ``require_valid_product`` is set, only orders
+    attributable to valid dimension rows are included (same as Gold LEFT JOIN grain).
     """
     orders = spark.table(_table_name(config, "silver_orders_table"))
     filtered = orders.filter(
@@ -175,6 +207,18 @@ def build_qualifying_silver_orders(
         filtered = filtered.filter(F.col("product_id").isNotNull())
     if require_order_date:
         filtered = filtered.filter(F.col("order_date").isNotNull())
+    if require_valid_customer:
+        filtered = filtered.join(
+            build_valid_deduplicated_customers(spark, config),
+            on="customer_id",
+            how="inner",
+        )
+    if require_valid_product:
+        filtered = filtered.join(
+            build_valid_deduplicated_products(spark, config),
+            on="product_id",
+            how="inner",
+        )
     return deduplicate_qualifying_orders(filtered)
 
 
@@ -184,6 +228,8 @@ def silver_qualifying_revenue(
     require_customer_id: bool = False,
     require_product_id: bool = False,
     require_order_date: bool = False,
+    require_valid_customer: bool = False,
+    require_valid_product: bool = False,
 ) -> Decimal:
     """Sum total_amount for qualifying deduplicated Silver orders."""
     orders = build_qualifying_silver_orders(
@@ -192,6 +238,8 @@ def silver_qualifying_revenue(
         require_customer_id=require_customer_id,
         require_product_id=require_product_id,
         require_order_date=require_order_date,
+        require_valid_customer=require_valid_customer,
+        require_valid_product=require_valid_product,
     )
     if orders.limit(1).count() == 0:
         return Decimal("0.00")
@@ -205,30 +253,12 @@ def silver_qualifying_revenue(
 
 def count_valid_deduplicated_customers(spark: SparkSession, config: PipelineConfig) -> int:
     """Count valid Silver customers at one row per customer_id."""
-    customers = spark.table(_table_name(config, "silver_customers_table"))
-    window = Window.partitionBy("customer_id").orderBy(F.col("_source_row_num"))
-    deduped = (
-        customers.filter(
-            (F.col("dq_is_valid") == F.lit(True)) & F.col("customer_id").isNotNull(),
-        )
-        .withColumn("_dedupe_rank", F.row_number().over(window))
-        .filter(F.col("_dedupe_rank") == 1)
-    )
-    return deduped.count()
+    return build_valid_deduplicated_customers(spark, config).count()
 
 
 def count_valid_deduplicated_products(spark: SparkSession, config: PipelineConfig) -> int:
     """Count valid Silver products at one row per product_id."""
-    products = spark.table(_table_name(config, "silver_products_table"))
-    window = Window.partitionBy("product_id").orderBy(F.col("_source_row_num"))
-    deduped = (
-        products.filter(
-            (F.col("dq_is_valid") == F.lit(True)) & F.col("product_id").isNotNull(),
-        )
-        .withColumn("_dedupe_rank", F.row_number().over(window))
-        .filter(F.col("_dedupe_rank") == 1)
-    )
-    return deduped.count()
+    return build_valid_deduplicated_products(spark, config).count()
 
 
 def _sum_gold_revenue(spark: SparkSession, qualified_table: str, column: str = "total_revenue") -> Decimal:
@@ -308,12 +338,14 @@ def run_reconciliation_checks(
         spark,
         config,
         require_product_id=True,
+        require_valid_product=True,
     )
     _assert_revenue_match(
         "sales_by_product_revenue",
         gold_product_revenue,
         silver_product_revenue,
-        "SUM(gold_sales_by_product.total_revenue) vs qualifying Silver orders with product_id",
+        "SUM(gold_sales_by_product.total_revenue) vs qualifying Silver orders "
+        "with valid product_id",
     )
 
     gold_customer_revenue = _sum_gold_revenue(spark, customer_table)
@@ -321,12 +353,14 @@ def run_reconciliation_checks(
         spark,
         config,
         require_customer_id=True,
+        require_valid_customer=True,
     )
     _assert_revenue_match(
         "revenue_by_customer_revenue",
         gold_customer_revenue,
         silver_customer_revenue,
-        "SUM(gold_revenue_by_customer.total_revenue) vs qualifying Silver orders with customer_id",
+        "SUM(gold_revenue_by_customer.total_revenue) vs qualifying Silver orders "
+        "with valid customer_id",
     )
 
     gold_daily_revenue = (
