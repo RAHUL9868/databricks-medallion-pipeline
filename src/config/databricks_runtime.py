@@ -71,6 +71,49 @@ def is_legacy_filestore_path(path: str) -> bool:
     return "/FileStore/" in path.replace("\\", "/")
 
 
+def is_unity_catalog_volume_path(path: str) -> bool:
+    """Return True for Unity Catalog volume paths."""
+    normalized = path.strip().replace("\\", "/")
+    return normalized.startswith("/Volumes/") or normalized.lower().startswith("file:/volumes/")
+
+
+def is_path_under_repo(path: str, repo_root: str) -> bool:
+    """Return True when ``path`` is inside the detected Git repository root."""
+    local = local_filesystem_path(path)
+    if local is None:
+        return False
+    try:
+        return str(local.resolve()).startswith(str(Path(repo_root).resolve()))
+    except OSError:
+        return False
+
+
+def should_use_repo_workspace_data(
+    configured_path: str,
+    repo_root: Optional[str] = None,
+) -> bool:
+    """
+    Return True when Databricks should ingest from ``{repo_root}/data`` instead.
+
+    Relative paths like ``./data`` or ``.ecommerce_sample_data`` resolve against the
+    driver working directory (often the user home folder), not the Git repo.
+    """
+    normalized = configured_path.strip()
+    if repo_root and is_path_under_repo(normalized, repo_root):
+        return False
+    if is_legacy_filestore_path(normalized) or normalized == DEFAULT_DBFS_SAMPLE_DATA_PATH:
+        return True
+    if is_unreadable_local_path_on_databricks(normalized):
+        return True
+    if normalized in ("./data", "data", DEFAULT_LOCAL_SAMPLE_DATA_PATH):
+        return True
+    if is_unity_catalog_volume_path(normalized):
+        return False
+    if is_remote_path(normalized):
+        return is_legacy_filestore_path(normalized)
+    return True
+
+
 def is_remote_path(path: str) -> bool:
     """Return True when the path uses DBFS or a cloud object-store scheme."""
     normalized = path.strip().lower()
@@ -271,11 +314,7 @@ def resolve_databricks_source_base_path(
         return configured_path
 
     effective_repo_root = repo_root or detect_databricks_repo_root(spark)
-    needs_workspace = (
-        is_legacy_filestore_path(configured_path)
-        or configured_path == DEFAULT_DBFS_SAMPLE_DATA_PATH
-        or is_unreadable_local_path_on_databricks(configured_path)
-    )
+    needs_workspace = should_use_repo_workspace_data(configured_path, effective_repo_root)
 
     if needs_workspace:
         if effective_repo_root:

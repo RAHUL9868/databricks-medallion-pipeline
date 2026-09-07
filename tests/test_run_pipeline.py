@@ -8,6 +8,7 @@ from config.databricks_runtime import (
     DEFAULT_DBFS_SAMPLE_DATA_PATH,
     detect_databricks_repo_root,
     prepare_config_source_for_spark,
+    should_use_repo_workspace_data,
     workspace_data_path,
 )
 from config.pipeline_config import load_config
@@ -90,6 +91,49 @@ def test_prepare_config_stages_to_workspace_repo_data(tmp_path, monkeypatch) -> 
     assert data_dir.is_dir()
     assert all((data_dir / name).exists() for name in ("customers.csv", "products.csv", "orders.csv"))
     assert prepared.source_base_path == workspace_data_path(str(repo_root))
+
+
+def test_should_use_repo_workspace_data_for_relative_paths(tmp_path) -> None:
+    repo_root = tmp_path / "databricks-medallion-pipeline"
+    repo_root.mkdir()
+    repo_data = repo_root / "data"
+    repo_data.mkdir()
+
+    assert should_use_repo_workspace_data("./data")
+    assert should_use_repo_workspace_data(".ecommerce_sample_data")
+    assert should_use_repo_workspace_data(
+        "/Workspace/Users/user@domain.com/.ecommerce_sample_data",
+        str(repo_root),
+    )
+    assert should_use_repo_workspace_data(DEFAULT_DBFS_SAMPLE_DATA_PATH)
+    assert not should_use_repo_workspace_data("/Volumes/catalog/schema/volume/data")
+    assert not should_use_repo_workspace_data(
+        repo_data.resolve().as_uri(),
+        str(repo_root),
+    )
+
+
+def test_prepare_config_rewrites_user_home_sample_path(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv("DATABRICKS_RUNTIME_VERSION", "1.0")
+    repo_root = tmp_path / "databricks-medallion-pipeline"
+    repo_root.mkdir()
+    (repo_root / "src").mkdir()
+    monkeypatch.setenv("PIPELINE_REPO_ROOT", str(repo_root))
+
+    home_sample = tmp_path / ".ecommerce_sample_data"
+    config = load_config(source_base_path=str(home_sample))
+    prepared = prepare_config_source_for_spark(spark=object(), config=config)
+    assert prepared.source_base_path == workspace_data_path(str(repo_root))
+
+
+def test_prepare_config_rewrites_relative_path_to_repo_data(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv("DATABRICKS_RUNTIME_VERSION", "1.0")
+    monkeypatch.setenv("PIPELINE_REPO_ROOT", str(tmp_path))
+    (tmp_path / "src").mkdir()
+
+    config = load_config(source_base_path=".ecommerce_sample_data")
+    prepared = prepare_config_source_for_spark(spark=object(), config=config)
+    assert prepared.source_base_path == workspace_data_path(str(tmp_path))
 
 
 def test_prepare_config_rewrites_filestore_when_repo_root_detected(tmp_path, monkeypatch) -> None:

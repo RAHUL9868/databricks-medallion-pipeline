@@ -478,6 +478,12 @@ def run_pipeline(
         if repo_root:
             logger.info("Detected Databricks repo root: %s", repo_root)
 
+    config = prepare_config_source_for_spark(
+        spark,
+        config,
+        repo_root=repo_root,
+    )
+
     generated_dir: Optional[Path] = None
     if generate_sample_data_flag:
         generated_dir = generate_sample_data(
