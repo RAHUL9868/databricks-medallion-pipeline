@@ -135,11 +135,49 @@ def workspace_data_path(repo_root: str, spark: Optional[SparkSession] = None) ->
     """Create ``{repo_root}/data`` and return a Spark-readable path on serverless."""
     data_dir = Path(repo_root) / "data"
     data_dir.mkdir(parents=True, exist_ok=True)
-    resolved = data_dir.resolve()
-    path_str = str(resolved).replace("\\", "/")
-    if path_str.startswith("/Workspace"):
-        return path_str
-    return resolved.as_uri()
+    return to_spark_readable_path(str(data_dir.resolve()))
+
+
+def spark_path_candidates(path: str) -> list[str]:
+    """Return path variants to probe for Spark/dbutils reads on Databricks."""
+    candidates: list[str] = []
+    seen: set[str] = set()
+
+    def add(value: str) -> None:
+        normalized = value.strip()
+        if normalized and normalized not in seen:
+            seen.add(normalized)
+            candidates.append(normalized)
+
+    add(path)
+    local = local_filesystem_path(path)
+    if local is not None:
+        resolved = str(local).replace("\\", "/")
+        add(resolved)
+        if resolved.startswith("/Workspace"):
+            add(f"file:{resolved}")
+            add(f"file://{resolved}")
+    elif path.startswith("file:"):
+        plain = urlparse(path).path
+        add(plain)
+        if plain.startswith("/Workspace"):
+            add(f"file:{plain}")
+
+    return candidates
+
+
+def to_spark_readable_path(path: str) -> str:
+    """Normalize a driver-local path for Spark CSV reads on Databricks serverless."""
+    local = local_filesystem_path(path)
+    if local is not None:
+        path_str = str(local).replace("\\", "/")
+        if path_str.startswith("/Workspace"):
+            return f"file:{path_str}"
+        if local.exists():
+            return str(local.resolve().as_uri())
+    if path.startswith("/Workspace"):
+        return f"file:{path}"
+    return path
 
 
 def _directory_has_sample_csvs(path: Path) -> bool:

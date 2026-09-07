@@ -10,6 +10,7 @@ from config.databricks_runtime import (
     discover_sample_data_dirs,
     prepare_config_source_for_spark,
     should_use_repo_workspace_data,
+    to_spark_readable_path,
     workspace_data_path,
 )
 from config.pipeline_config import load_config
@@ -111,6 +112,13 @@ def test_should_use_repo_workspace_data_for_relative_paths(tmp_path) -> None:
     assert not should_use_repo_workspace_data(
         repo_data.resolve().as_uri(),
         str(repo_root),
+    )
+
+
+def test_to_spark_readable_path_uses_file_prefix_for_workspace() -> None:
+    path = "/Workspace/Users/user@domain.com/databricks-medallion-pipeline/data/customers.csv"
+    assert to_spark_readable_path(path) == (
+        "file:/Workspace/Users/user@domain.com/databricks-medallion-pipeline/data/customers.csv"
     )
 
 

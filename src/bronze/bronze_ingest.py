@@ -33,6 +33,7 @@ if str(_SRC_ROOT) not in sys.path:
     sys.path.insert(0, str(_SRC_ROOT))
 
 from bronze.bronze_schemas import ENTITY_SCHEMAS, SOURCE_COLUMN_NAMES
+from config.databricks_runtime import spark_path_candidates, to_spark_readable_path
 from config.pipeline_config import PipelineConfig, load_config
 
 logger = logging.getLogger(__name__)
@@ -100,10 +101,7 @@ def normalize_source_path(path: str) -> str:
         return path
     if path.startswith("/dbfs/"):
         return "dbfs:" + path[5:]
-    local_path = Path(path)
-    if local_path.exists():
-        return str(local_path.resolve().as_uri())
-    return path
+    return to_spark_readable_path(path)
 
 
 _REMOTE_PATH_PREFIXES = ("dbfs:", "s3:", "abfss:", "gs:", "wasbs:", "hdfs:")
@@ -180,18 +178,33 @@ def path_exists(spark: SparkSession, path: str) -> bool:
     Check whether a path exists using the active Spark filesystem.
 
     Does not use ``spark._jvm`` so this works on Databricks serverless compute.
+    On serverless, ``Path.exists()`` may be False for ``/Workspace`` files that
+    Spark can still read via ``file:/Workspace/...`` — so workspace paths are
+    verified with Spark/dbutils, not driver pathlib alone.
     """
-    normalized = normalize_source_path(path)
+    for candidate in spark_path_candidates(path):
+        local = _local_filesystem_path(candidate)
+        path_str = str(local).replace("\\", "/") if local is not None else candidate
 
-    local_path = _local_filesystem_path(normalized)
-    if local_path is not None:
-        return local_path.exists()
+        if path_str.startswith("/Workspace") or candidate.startswith("file:/Workspace"):
+            if _path_exists_spark_read(spark, candidate):
+                return True
+            dbutils_result = _path_exists_dbutils(spark, candidate)
+            if dbutils_result is True:
+                return True
+            continue
 
-    dbutils_result = _path_exists_dbutils(spark, normalized)
-    if dbutils_result is not None:
-        return dbutils_result
+        if local is not None and local.is_file():
+            return True
 
-    return _path_exists_spark_read(spark, normalized)
+        dbutils_result = _path_exists_dbutils(spark, candidate)
+        if dbutils_result is True:
+            return True
+
+        if _path_exists_spark_read(spark, candidate):
+            return True
+
+    return False
 
 
 def validate_source_file(spark: SparkSession, source_path: str, entity: str) -> str:
