@@ -1,0 +1,39 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+venv/
+env/
+
+# Secrets and local config
+.env
+.env.*
+*.pem
+credentials.json
+
+# Generated data (regenerate with generate_sample_data.py)
+data/
+*.csv
+
+# Spark / Delta local artifacts
+spark-warehouse/
+metastore_db/
+derby.log
+*.delta/
+
+# IDE / OS
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+
+# Build / coverage
+htmlcov/
+.coverage
+dist/
+build/
