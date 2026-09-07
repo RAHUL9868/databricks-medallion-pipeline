@@ -7,11 +7,19 @@ from __future__ import annotations
 import logging
 import os
 import shutil
+import sys
+from dataclasses import replace
 from pathlib import Path
 from typing import Optional
 from urllib.parse import urlparse
 
 from pyspark.sql import SparkSession
+
+import config.pipeline_config as _pipeline_config_module
+
+# Databricks notebooks import via sys.path; ensure the defining module stays registered
+# for dataclass annotation resolution on Python 3.12+.
+sys.modules.setdefault(_pipeline_config_module.__name__, _pipeline_config_module)
 
 logger = logging.getLogger(__name__)
 
@@ -384,8 +392,6 @@ def prepare_config_source_for_spark(
 
     Prefers ``{repo_root}/data`` when public DBFS FileStore is disabled.
     """
-    from config.pipeline_config import load_config
-
     if not is_databricks_runtime(spark):
         return config
 
@@ -431,15 +437,6 @@ def prepare_config_source_for_spark(
             final_base,
             config.source_base_path,
         )
-        return load_config(
-            source_base_path=final_base,
-            catalog=config.catalog,
-            schema_name=config.schema_name,
-            bronze_write_mode=config.bronze_write_mode,
-            silver_write_mode=config.silver_write_mode,
-            gold_write_mode=config.gold_write_mode,
-            batch_id=config.batch_id,
-            run_id=config.run_id,
-        )
+        return replace(config, source_base_path=final_base)
 
     return config

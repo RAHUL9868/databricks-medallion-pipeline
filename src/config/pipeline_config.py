@@ -5,10 +5,8 @@ Values can be overridden via environment variables or by passing a config object
 to ingest functions. No workspace-specific paths are hard-coded.
 """
 
-from __future__ import annotations
-
 import os
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, fields, replace
 from datetime import datetime, timezone
 from typing import Dict, Optional
 
@@ -96,33 +94,10 @@ def load_config(**overrides: object) -> PipelineConfig:
     if not overrides:
         return config
 
-    data = {
-        "source_base_path": config.source_base_path,
-        "catalog": config.catalog,
-        "schema_name": config.schema_name,
-        "bronze_write_mode": config.bronze_write_mode,
-        "batch_id": config.batch_id,
-        "bronze_customers_table": config.bronze_customers_table,
-        "bronze_orders_table": config.bronze_orders_table,
-        "bronze_products_table": config.bronze_products_table,
-        "bronze_ingest_audit_table": config.bronze_ingest_audit_table,
-        "silver_write_mode": config.silver_write_mode,
-        "run_id": config.run_id,
-        "silver_customers_table": config.silver_customers_table,
-        "silver_orders_table": config.silver_orders_table,
-        "silver_products_table": config.silver_products_table,
-        "silver_dq_metrics_table": config.silver_dq_metrics_table,
-        "silver_dq_report_table": config.silver_dq_report_table,
-        "gold_write_mode": config.gold_write_mode,
-        "gold_sales_by_product_table": config.gold_sales_by_product_table,
-        "gold_revenue_by_customer_table": config.gold_revenue_by_customer_table,
-        "gold_daily_weekly_trends_table": config.gold_daily_weekly_trends_table,
-        "gold_customer_segmentation_table": config.gold_customer_segmentation_table,
-        "customers_csv": config.customers_csv,
-        "orders_csv": config.orders_csv,
-        "products_csv": config.products_csv,
+    field_names = {field_def.name for field_def in fields(PipelineConfig)}
+    valid_overrides = {
+        key: value
+        for key, value in overrides.items()
+        if key in field_names and value is not None
     }
-    for key, value in overrides.items():
-        if key in data and value is not None:
-            data[key] = value
-    return PipelineConfig(**data)
+    return replace(config, **valid_overrides)
