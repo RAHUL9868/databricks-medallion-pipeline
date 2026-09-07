@@ -569,6 +569,8 @@ Full rationale: `design-notes.md`.
 | Document | Contents |
 |----------|----------|
 | `database/setup-notes.md` | Databricks setup, execution order, reset |
+| `database/databricks-git-setup.md` | Import GitHub repo into Databricks Repos |
+| `notebooks/run_full_pipeline.ipynb` | Starter notebook for full pipeline on Databricks |
 | `database/seed-data-notes.md` | CSV volumes, corruptions, upload |
 | `database/schema.sql` | Reference table definitions |
 | `src/dashboard/DASHBOARD_GUIDE.md` | Dashboard build and validation |
