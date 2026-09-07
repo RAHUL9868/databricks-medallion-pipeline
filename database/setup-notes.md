@@ -45,9 +45,18 @@ Includes `pyspark>=3.4.0` and `pytest>=7.0.0`.
 
 ### Attach project to Databricks
 
-- **Repos:** Connect this Git repository to a Databricks Repo.
-- **Workspace files:** Upload `src/` and run notebooks/scripts from there.
-- **Local + remote:** Generate CSVs locally, upload to DBFS, run ingest on a cluster.
+**Recommended — GitHub Repos (sync git changes):**
+
+1. Push code to: `https://github.com/RAHUL9868/databricks-medallion-pipeline` (branch `main`).
+2. In Databricks: **Repos** → **Add Repo** → paste the Git URL → branch `main`.
+3. After each local `git push`, open the Repo in Databricks and click **Pull**.
+
+Full step-by-step: **`database/databricks-git-setup.md`**.
+
+Other options:
+
+- **Workspace files:** Upload `src/` manually (no git sync).
+- **Local + DBFS:** Generate CSVs locally, upload to DBFS, run ingest on a cluster.
 
 ---
 
@@ -261,7 +270,7 @@ python src/bronze/ingest_all.py \
 **Databricks notebook alternative:**
 
 ```python
-%run /Repos/<user>/ecommerce-medallion-pipeline/src/bronze/ingest_all
+%run /Repos/<user>/databricks-medallion-pipeline/src/bronze/ingest_all
 ```
 
 Or import and call `ingest_all_entities()` from `bronze.bronze_ingest`.
@@ -374,7 +383,7 @@ Typical workflow:
 
 ```python
 import sys
-sys.path.insert(0, "/Workspace/Repos/<you>/ecommerce-medallion-pipeline/src")
+sys.path.insert(0, "/Workspace/Repos/<you>/databricks-medallion-pipeline/src")
 
 from config.pipeline_config import load_config
 from bronze.bronze_ingest import ingest_all_entities, get_spark
@@ -503,3 +512,4 @@ Regenerate and re-upload CSVs before the next Bronze run.
 | `design-notes.md` | Architecture and design decisions D1–D10 |
 | `data-quality-strategy.md` | DQ rules and expected failure counts |
 | `src/config/pipeline_config.py` | All configurable table names and paths |
+| `database/databricks-git-setup.md` | Import GitHub repo into Databricks Repos and sync |
