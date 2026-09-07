@@ -45,12 +45,9 @@ Columns added/updated
 | dq_checked_at            | Updated timestamp |
 """
 
-from __future__ import annotations
-
 import argparse
 import logging
 import sys
-from dataclasses import dataclass
 from datetime import datetime, timezone
 from enum import Enum
 from pathlib import Path
@@ -88,15 +85,24 @@ class RuleScope(str, Enum):
     ENGINEERING_ASSUMPTION = "engineering_assumption"
 
 
-@dataclass(frozen=True)
 class BusinessLogicRule:
-    rule_id: str
-    entity: str
-    description: str
-    rationale: str
-    failure_condition: str
-    scope: RuleScope
-    failure_predicate: Callable[[], Column]
+    def __init__(
+        self,
+        rule_id: str,
+        entity: str,
+        description: str,
+        rationale: str,
+        failure_condition: str,
+        scope: RuleScope,
+        failure_predicate: Callable[[], Column],
+    ) -> None:
+        self.rule_id = rule_id
+        self.entity = entity
+        self.description = description
+        self.rationale = rationale
+        self.failure_condition = failure_condition
+        self.scope = scope
+        self.failure_predicate = failure_predicate
 
 
 def _trimmed(column_name: str) -> Column:

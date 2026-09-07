@@ -36,12 +36,9 @@ Columns added/updated
 | dq_checked_at          | Updated timestamp |
 """
 
-from __future__ import annotations
-
 import argparse
 import logging
 import sys
-from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, List, Optional, Sequence, Tuple
@@ -67,11 +64,11 @@ from silver.silver_common import (
 logger = logging.getLogger(__name__)
 
 
-@dataclass(frozen=True)
 class UniquenessRule:
-    rule_id: str
-    column: str
-    description: str
+    def __init__(self, rule_id: str, column: str, description: str) -> None:
+        self.rule_id = rule_id
+        self.column = column
+        self.description = description
 
 
 CUSTOMER_UNIQUENESS_RULES: Tuple[UniquenessRule, ...] = (

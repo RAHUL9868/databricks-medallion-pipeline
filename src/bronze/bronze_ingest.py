@@ -5,12 +5,9 @@ Preserves raw source values (all business columns as STRING), adds ingest metada
 and records run-level audit rows.
 """
 
-from __future__ import annotations
-
 import logging
 import sys
 import traceback
-from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, List, Optional
@@ -36,6 +33,8 @@ from bronze.bronze_schemas import ENTITY_SCHEMAS, SOURCE_COLUMN_NAMES
 from config.databricks_runtime import spark_path_candidates, to_spark_readable_path
 from config.pipeline_config import PipelineConfig, load_config
 
+sys.modules.setdefault(__name__, sys.modules[__name__])
+
 logger = logging.getLogger(__name__)
 
 CORRUPT_RECORD_COLUMN = "_corrupt_record"
@@ -60,17 +59,30 @@ BRONZE_INGEST_AUDIT_SCHEMA = StructType(
 )
 
 
-@dataclass(frozen=True)
 class IngestResult:
-    entity: str
-    source_path: str
-    target_table: str
-    row_count: int
-    source_column_count: int
-    bronze_column_count: int
-    corrupt_record_count: int
-    batch_id: str
-    write_mode: str
+    """Outcome of a single Bronze entity ingest."""
+
+    def __init__(
+        self,
+        entity: str,
+        source_path: str,
+        target_table: str,
+        row_count: int,
+        source_column_count: int,
+        bronze_column_count: int,
+        corrupt_record_count: int,
+        batch_id: str,
+        write_mode: str,
+    ) -> None:
+        self.entity = entity
+        self.source_path = source_path
+        self.target_table = target_table
+        self.row_count = row_count
+        self.source_column_count = source_column_count
+        self.bronze_column_count = bronze_column_count
+        self.corrupt_record_count = corrupt_record_count
+        self.batch_id = batch_id
+        self.write_mode = write_mode
 
 
 class BronzeIngestError(Exception):

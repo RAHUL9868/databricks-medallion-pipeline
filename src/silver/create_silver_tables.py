@@ -104,6 +104,7 @@ def _load_step_module(file_name: str, module_name: str):
     if spec is None or spec.loader is None:
         raise RuntimeError(f"Unable to load module from {module_path}")
     module = importlib.util.module_from_spec(spec)
+    sys.modules[module_name] = module
     spec.loader.exec_module(module)
     return module
 

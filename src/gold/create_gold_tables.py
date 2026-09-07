@@ -18,7 +18,6 @@ from __future__ import annotations
 import argparse
 import logging
 import sys
-from dataclasses import dataclass
 from decimal import Decimal
 from pathlib import Path
 from typing import Dict, List, Optional, Sequence, Tuple
@@ -33,6 +32,8 @@ if str(_SRC_ROOT) not in sys.path:
 from config.pipeline_config import PipelineConfig, load_config
 from silver.silver_common import ensure_schema_exists, get_spark
 
+sys.modules.setdefault(__name__, sys.modules[__name__])
+
 logger = logging.getLogger(__name__)
 
 REVENUE_TOLERANCE = Decimal("0.01")
@@ -41,13 +42,13 @@ COMPLETED_STATUS = "Completed"
 GOLD_SQL_DIR = Path(__file__).resolve().parent
 
 
-@dataclass(frozen=True)
 class GoldTableStep:
     """One Gold table build step."""
 
-    logical_name: str
-    sql_file: str
-    table_config_key: str
+    def __init__(self, logical_name: str, sql_file: str, table_config_key: str) -> None:
+        self.logical_name = logical_name
+        self.sql_file = sql_file
+        self.table_config_key = table_config_key
 
 
 GOLD_TABLE_STEPS: Tuple[GoldTableStep, ...] = (

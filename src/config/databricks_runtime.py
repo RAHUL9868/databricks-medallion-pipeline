@@ -478,3 +478,20 @@ def prepare_config_source_for_spark(
         return replace(config, source_base_path=final_base)
 
     return config
+
+
+def ensure_notebook_modules() -> None:
+    """
+    Register pipeline modules in ``sys.modules`` for Databricks notebook imports.
+
+    Python 3.12 dataclasses resolve deferred annotations via the defining module's
+    namespace. Notebook ``sys.path`` imports can leave modules unregistered, which
+    triggers ``AttributeError: 'NoneType' object has no attribute '__dict__'``.
+    """
+    import bronze.bronze_ingest as bronze_ingest
+    import gold.create_gold_tables as gold_tables
+    import run_pipeline as run_pipeline_module
+    import silver.create_silver_tables as silver_tables
+
+    for module in (bronze_ingest, gold_tables, run_pipeline_module, silver_tables):
+        sys.modules.setdefault(module.__name__, module)

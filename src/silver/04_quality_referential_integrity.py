@@ -45,12 +45,9 @@ Columns added/updated
 | dq_checked_at          | Updated timestamp |
 """
 
-from __future__ import annotations
-
 import argparse
 import logging
 import sys
-from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, List, Optional, Sequence, Tuple
@@ -81,15 +78,24 @@ EXPECTED_INVALID_CUSTOMER_IDS = 50
 EXPECTED_INVALID_PRODUCT_IDS = 30
 
 
-@dataclass(frozen=True)
 class ReferentialIntegrityRule:
-    rule_id: str
-    fk_column: str
-    parent_key_alias: str
-    description: str
-    parent_silver_table: str
-    parent_bronze_table: str
-    parent_key_column: str
+    def __init__(
+        self,
+        rule_id: str,
+        fk_column: str,
+        parent_key_alias: str,
+        description: str,
+        parent_silver_table: str,
+        parent_bronze_table: str,
+        parent_key_column: str,
+    ) -> None:
+        self.rule_id = rule_id
+        self.fk_column = fk_column
+        self.parent_key_alias = parent_key_alias
+        self.description = description
+        self.parent_silver_table = parent_silver_table
+        self.parent_bronze_table = parent_bronze_table
+        self.parent_key_column = parent_key_column
 
 
 ORDER_REFERENTIAL_RULES: Tuple[ReferentialIntegrityRule, ...] = (

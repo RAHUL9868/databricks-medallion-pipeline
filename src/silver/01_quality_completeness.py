@@ -23,17 +23,14 @@ NULL handling: NULL, empty string, and whitespace-only Bronze STRING values are 
 as missing for required fields.
 """
 
-from __future__ import annotations
-
 import argparse
 import logging
 import sys
-from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, List, Optional, Sequence, Tuple
 
-from pyspark.sql import DataFrame, SparkSession
+from pyspark.sql import Column, DataFrame, SparkSession
 from pyspark.sql import functions as F
 
 _SRC_ROOT = Path(__file__).resolve().parents[1]
@@ -54,11 +51,11 @@ from silver.silver_common import (
 logger = logging.getLogger(__name__)
 
 
-@dataclass(frozen=True)
 class CompletenessRule:
-    rule_id: str
-    column: str
-    description: str
+    def __init__(self, rule_id: str, column: str, description: str) -> None:
+        self.rule_id = rule_id
+        self.column = column
+        self.description = description
 
 
 CUSTOMER_COMPLETENESS_RULES: Tuple[CompletenessRule, ...] = (

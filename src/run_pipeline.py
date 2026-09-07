@@ -43,6 +43,7 @@ from typing import Dict, List, Optional, Sequence, Tuple
 
 from pyspark.sql import SparkSession
 
+import bronze.bronze_ingest as _bronze_ingest_module
 import config.pipeline_config as _pipeline_config_module
 
 _SRC_ROOT = Path(__file__).resolve().parent
@@ -50,7 +51,7 @@ if str(_SRC_ROOT) not in sys.path:
     sys.path.insert(0, str(_SRC_ROOT))
 
 sys.modules.setdefault(_pipeline_config_module.__name__, _pipeline_config_module)
-sys.modules.setdefault(__name__, sys.modules[__name__])
+sys.modules.setdefault(_bronze_ingest_module.__name__, _bronze_ingest_module)
 
 from bronze.bronze_ingest import (
     BronzeIngestError,

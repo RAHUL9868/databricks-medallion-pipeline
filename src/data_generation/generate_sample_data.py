@@ -13,7 +13,6 @@ import logging
 import random
 import sys
 from collections import Counter
-from dataclasses import dataclass, field
 from datetime import date, timedelta
 from decimal import Decimal, ROUND_HALF_UP
 from pathlib import Path
@@ -125,20 +124,19 @@ ORDER_CSV_COLUMNS = [
 logger = logging.getLogger(__name__)
 
 
-@dataclass
 class CorruptionAudit:
     """Tracks intentionally corrupted records (not written to CSV)."""
 
-    null_email_customer_ids: Set[int] = field(default_factory=set)
-    duplicate_customer_source_ids: Set[int] = field(default_factory=set)
-    duplicate_customer_row_indices: List[int] = field(default_factory=list)
-
-    null_customer_id_order_indices: Set[int] = field(default_factory=set)
-    null_product_id_order_indices: Set[int] = field(default_factory=set)
-    invalid_customer_id_order_indices: Set[int] = field(default_factory=set)
-    invalid_product_id_order_indices: Set[int] = field(default_factory=set)
-    duplicate_order_source_indices: Set[int] = field(default_factory=set)
-    duplicate_order_row_indices: List[int] = field(default_factory=list)
+    def __init__(self) -> None:
+        self.null_email_customer_ids: Set[int] = set()
+        self.duplicate_customer_source_ids: Set[int] = set()
+        self.duplicate_customer_row_indices: List[int] = []
+        self.null_customer_id_order_indices: Set[int] = set()
+        self.null_product_id_order_indices: Set[int] = set()
+        self.invalid_customer_id_order_indices: Set[int] = set()
+        self.invalid_product_id_order_indices: Set[int] = set()
+        self.duplicate_order_source_indices: Set[int] = set()
+        self.duplicate_order_row_indices: List[int] = []
 
 
 def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:

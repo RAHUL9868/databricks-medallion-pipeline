@@ -35,12 +35,9 @@ Columns added/updated
 | dq_checked_at           | Updated timestamp |
 """
 
-from __future__ import annotations
-
 import argparse
 import logging
 import sys
-from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
 from pathlib import Path
@@ -83,13 +80,20 @@ class ValidationKind(str, Enum):
     REQUIRED_NON_NEGATIVE_INTEGER = "required_non_negative_integer"
 
 
-@dataclass(frozen=True)
 class TypeValidationRule:
-    rule_id: str
-    column: str
-    description: str
-    kind: ValidationKind
-    allowed_values: Tuple[str, ...] = field(default_factory=tuple)
+    def __init__(
+        self,
+        rule_id: str,
+        column: str,
+        description: str,
+        kind: ValidationKind,
+        allowed_values: Tuple[str, ...] = (),
+    ) -> None:
+        self.rule_id = rule_id
+        self.column = column
+        self.description = description
+        self.kind = kind
+        self.allowed_values = allowed_values
 
 
 def _trimmed(column_name: str) -> Column:
