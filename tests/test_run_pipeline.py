@@ -7,6 +7,7 @@ import pytest
 from config.databricks_runtime import (
     DEFAULT_DBFS_SAMPLE_DATA_PATH,
     detect_databricks_repo_root,
+    discover_sample_data_dirs,
     prepare_config_source_for_spark,
     should_use_repo_workspace_data,
     workspace_data_path,
@@ -111,6 +112,37 @@ def test_should_use_repo_workspace_data_for_relative_paths(tmp_path) -> None:
         repo_data.resolve().as_uri(),
         str(repo_root),
     )
+
+
+def test_prepare_config_stages_legacy_home_sample_dir(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv("DATABRICKS_RUNTIME_VERSION", "1.0")
+    repo_root = tmp_path / "databricks-medallion-pipeline"
+    repo_root.mkdir()
+    (repo_root / "src").mkdir()
+    monkeypatch.setenv("PIPELINE_REPO_ROOT", str(repo_root))
+
+    legacy_dir = tmp_path / ".ecommerce_sample_data"
+    legacy_dir.mkdir()
+    for name in ("customers.csv", "products.csv", "orders.csv"):
+        (legacy_dir / name).write_text("x\n", encoding="utf-8")
+
+    config = load_config(source_base_path=str(legacy_dir))
+    prepared = prepare_config_source_for_spark(spark=object(), config=config)
+
+    data_dir = repo_root / "data"
+    assert all((data_dir / name).exists() for name in ("customers.csv", "products.csv", "orders.csv"))
+    assert prepared.source_base_path == workspace_data_path(str(repo_root))
+
+
+def test_discover_sample_data_dirs_includes_legacy_locations(tmp_path) -> None:
+    repo_root = tmp_path / "databricks-medallion-pipeline"
+    repo_root.mkdir()
+    legacy_dir = tmp_path / ".ecommerce_sample_data"
+    legacy_dir.mkdir()
+
+    discovered = discover_sample_data_dirs(str(legacy_dir), str(repo_root), None)
+    assert legacy_dir in discovered
+    assert Path("/tmp/ecommerce_medallion_sample_data") in discovered
 
 
 def test_prepare_config_rewrites_user_home_sample_path(tmp_path, monkeypatch) -> None:

@@ -21,6 +21,7 @@ DEFAULT_LOCAL_SAMPLE_DATA_PATH = "./data"
 
 _REMOTE_PATH_PREFIXES = ("dbfs:", "s3:", "abfss:", "gs:", "wasbs:", "hdfs:")
 _CSV_NAMES = ("customers.csv", "products.csv", "orders.csv")
+_LEGACY_SAMPLE_DIR_NAMES = ("ecommerce_medallion_sample_data", ".ecommerce_sample_data")
 
 
 def local_filesystem_path(path: str) -> Optional[Path]:
@@ -122,11 +123,57 @@ def is_remote_path(path: str) -> bool:
     return any(normalized.startswith(prefix) for prefix in _REMOTE_PATH_PREFIXES)
 
 
-def workspace_data_path(repo_root: str) -> str:
-    """Create ``{repo_root}/data`` and return a file URI Spark can read on serverless."""
+def workspace_data_path(repo_root: str, spark: Optional[SparkSession] = None) -> str:
+    """Create ``{repo_root}/data`` and return a Spark-readable path on serverless."""
     data_dir = Path(repo_root) / "data"
     data_dir.mkdir(parents=True, exist_ok=True)
-    return data_dir.resolve().as_uri()
+    resolved = data_dir.resolve()
+    path_str = str(resolved).replace("\\", "/")
+    if path_str.startswith("/Workspace"):
+        return path_str
+    return resolved.as_uri()
+
+
+def _directory_has_sample_csvs(path: Path) -> bool:
+    return path.is_dir() and all((path / name).is_file() for name in _CSV_NAMES)
+
+
+def discover_sample_data_dirs(
+    configured_path: str,
+    repo_root: Optional[str],
+    local_csv_dir: Optional[str],
+) -> list[Path]:
+    """
+    Return driver-local directories that may contain generated sample CSVs.
+
+    Includes legacy notebook locations such as ``/tmp/ecommerce_medallion_sample_data``
+    and ``~/.ecommerce_sample_data`` so data is not lost when ingest paths are rewritten.
+    """
+    candidates: list[Path] = []
+    seen: set[str] = set()
+
+    def add(path: Path) -> None:
+        key = str(path)
+        if key not in seen:
+            seen.add(key)
+            candidates.append(path)
+
+    if local_csv_dir:
+        add(Path(local_csv_dir))
+
+    configured_local = local_filesystem_path(configured_path)
+    if configured_local is not None:
+        add(configured_local if configured_local.is_dir() else configured_local.parent)
+
+    for name in _LEGACY_SAMPLE_DIR_NAMES:
+        add(Path("/tmp") / name)
+
+    if repo_root:
+        repo_parent = Path(repo_root).parent
+        for name in _LEGACY_SAMPLE_DIR_NAMES:
+            add(repo_parent / name)
+
+    return candidates
 
 
 def _looks_like_repo_root(path: Path) -> bool:
@@ -286,7 +333,7 @@ def stage_local_csvs_for_ingest(
         if is_databricks_runtime(spark):
             if not effective_repo_root:
                 raise ValueError(_filestore_unavailable_message(target_base))
-            target_base = workspace_data_path(effective_repo_root)
+            target_base = workspace_data_path(effective_repo_root, spark=spark)
         else:
             upload_local_csvs_to_dbfs(local_dir, target_base, spark)
             return target_base
@@ -318,7 +365,7 @@ def resolve_databricks_source_base_path(
 
     if needs_workspace:
         if effective_repo_root:
-            return workspace_data_path(effective_repo_root)
+            return workspace_data_path(effective_repo_root, spark=spark)
         if is_legacy_filestore_path(configured_path) or configured_path == DEFAULT_DBFS_SAMPLE_DATA_PATH:
             raise ValueError(_filestore_unavailable_message(configured_path))
 
@@ -349,24 +396,33 @@ def prepare_config_source_for_spark(
         spark=spark,
     )
 
-    candidate_dirs: list[Path] = []
-    if local_csv_dir:
-        candidate_dirs.append(Path(local_csv_dir))
-    if is_unreadable_local_path_on_databricks(config.source_base_path):
-        local_path = local_filesystem_path(config.source_base_path)
-        if local_path is not None:
-            candidate_dirs.append(local_path)
+    candidate_dirs = discover_sample_data_dirs(
+        config.source_base_path,
+        effective_repo_root,
+        local_csv_dir,
+    )
+    target_local = local_filesystem_path(target_base)
+    target_has_csvs = target_local is not None and _directory_has_sample_csvs(target_local)
 
     staged_base: Optional[str] = None
-    for local_dir in candidate_dirs:
-        if local_dir.is_dir() and any(local_dir.glob("*.csv")):
-            staged_base = stage_local_csvs_for_ingest(
-                str(local_dir),
-                target_base,
-                spark,
-                repo_root=effective_repo_root,
-            )
-            break
+    if not target_has_csvs:
+        for local_dir in candidate_dirs:
+            if _directory_has_sample_csvs(local_dir):
+                if target_local is not None and local_dir.resolve() == target_local.resolve():
+                    staged_base = target_base
+                    break
+                staged_base = stage_local_csvs_for_ingest(
+                    str(local_dir),
+                    target_base,
+                    spark,
+                    repo_root=effective_repo_root,
+                )
+                logger.info(
+                    "Copied sample CSVs from %s to ingest path %s",
+                    local_dir,
+                    staged_base,
+                )
+                break
 
     final_base = staged_base or target_base
     if final_base != config.source_base_path:
