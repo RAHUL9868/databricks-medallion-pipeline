@@ -59,25 +59,26 @@ SELECT 'gold_daily_weekly_trends', COUNT(*) FROM gold_daily_weekly_trends;
 
 Each table should return a non-zero row count (segmentation returns four segment rows).
 
-### Step 2 — Create dashboard parameters
+### Step 2 — Choose how to filter (pick one)
 
-Open **SQL** → **Dashboards** → create a new dashboard (e.g. `E-Commerce Gold Analytics`).
+**Option A — Run as-is (recommended to start)**  
+Queries use a `dashboard_filters` CTE with literal defaults (`'ALL'`). Paste a query block and **Run** — no SQL parameters required.
 
-Add **dashboard-level parameters** (names must match the query placeholders):
+To narrow a chart, edit the CTE in that query, for example:
 
-| Parameter | Type | Suggested default | Used by |
-|-----------|------|-------------------|---------|
-| `product_category` | Text | `ALL` | Top 10 Products, Top Categories |
-| `customer_segment` | Text | `ALL` | Customer Revenue Distribution, Revenue by Tier |
-| `start_date` | Date | Minimum `period_start_date` in trends | Daily Revenue Trend (optional) |
-| `end_date` | Date | Maximum `period_start_date` in trends | Daily Revenue Trend (optional) |
+```sql
+WITH dashboard_filters AS (
+    SELECT 'Electronics' AS product_category  -- was 'ALL'
+)
+```
 
-**Filter values:**
+**Option B — Interactive Lakeview filters**  
+After adding a visualization, use **Add filter** on the dataset field (`category`, `customer_segment`, or `period_start_date`). Viewers change filters in the dashboard UI without editing SQL.
 
-- `product_category`: `ALL`, or a category from `gold_sales_by_product` (e.g. `Electronics`, `Clothing`).
-- `customer_segment`: `ALL`, `Premium`, `Standard`, or `Basic` (marketing tier from customer master — not the behavioral pie chart).
+**Option C — SQL parameters (`:name`)**  
+Only if you need query-level parameters: add each name under **Query → Parameters** with a default (e.g. `product_category` = `ALL`). The repo queries no longer use `:parameter` syntax by default because unset parameters cause `UNBOUND_SQL_PARAMETER` on serverless.
 
-To discover valid category values:
+Discover valid category values:
 
 ```sql
 SELECT DISTINCT category FROM gold_sales_by_product ORDER BY category;
@@ -99,7 +100,7 @@ For each visualization:
 1. Open your dashboard → **Add** → **Visualization**.
 2. Select the saved query.
 3. Configure chart type, axes, and fields per the sections below.
-4. **Link parameters** — map each dashboard parameter to the query parameter with the same name (`:product_category`, etc.).
+4. **Optional:** add **field filters** on `category`, `customer_segment`, or `period_start_date` for interactive filtering.
 5. Arrange tiles and save the dashboard.
 
 ---
@@ -130,9 +131,9 @@ Use a **horizontal** bar chart if your Databricks UI offers orientation — long
 
 #### Filters
 
-| Filter | Parameter | Behavior |
-|--------|-----------|----------|
-| Product category | `product_category` | `ALL` = all categories; otherwise only products in that category |
+| Filter | How to apply | Behavior |
+|--------|----------------|----------|
+| Product category | Edit `dashboard_filters.product_category` in the query, or add a field filter on `category` | `ALL` = all categories |
 
 #### Suggested title
 
