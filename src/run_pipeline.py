@@ -57,8 +57,7 @@ from bronze.bronze_ingest import (
 from config.pipeline_config import PipelineConfig, load_config
 from config.databricks_runtime import (
     assert_spark_readable_source_path,
-    is_databricks_runtime,
-    upload_local_csvs_to_dbfs,
+    prepare_config_source_for_spark,
 )
 from data_generation.generate_sample_data import (
     CUSTOMER_TOTAL_COUNT,
@@ -136,7 +135,7 @@ def configure_logging(level: str) -> None:
     )
 
 
-def validate_configuration(config: PipelineConfig) -> None:
+def validate_configuration(config: PipelineConfig, spark: Optional[SparkSession] = None) -> None:
     """
     Fail fast on invalid or incomplete pipeline configuration.
 
@@ -161,7 +160,7 @@ def validate_configuration(config: PipelineConfig) -> None:
         )
 
     try:
-        assert_spark_readable_source_path(config.source_base_path)
+        assert_spark_readable_source_path(config.source_base_path, spark=spark)
     except ValueError as exc:
         raise PipelineConfigurationError(str(exc)) from exc
 
@@ -469,9 +468,23 @@ def run_pipeline(
         When True, assert generated sample files match expected row counts via Spark.
     """
     started = time.monotonic()
-    validate_configuration(config)
-
     spark = get_spark(spark)
+
+    generated_dir: Optional[Path] = None
+    if generate_sample_data_flag:
+        generated_dir = generate_sample_data(
+            config,
+            seed=sample_data_seed,
+            output_dir=sample_data_output_dir,
+        )
+
+    config = prepare_config_source_for_spark(
+        spark,
+        config,
+        local_csv_dir=str(generated_dir) if generated_dir is not None else None,
+    )
+    validate_configuration(config, spark=spark)
+
     summary = PipelineRunSummary(
         run_id=config.resolved_run_id(),
         batch_id=config.resolved_batch_id(),
@@ -483,36 +496,8 @@ def run_pipeline(
     try:
         if generate_sample_data_flag:
             summary.steps_completed.append("generate_sample_data")
-            generated_dir = generate_sample_data(
-                config,
-                seed=sample_data_seed,
-                output_dir=sample_data_output_dir,
-            )
-            if is_databricks_runtime() and is_remote_path(config.source_base_path):
+            if generated_dir is not None and config.source_base_path.startswith("dbfs:"):
                 summary.steps_completed.append("upload_sample_data_to_dbfs")
-                upload_local_csvs_to_dbfs(str(generated_dir), config.source_base_path, spark)
-                logger.info(
-                    "Uploaded generated CSVs from %s to %s",
-                    generated_dir,
-                    config.source_base_path,
-                )
-            elif not is_remote_path(config.source_base_path):
-                resolved_source = resolve_sample_data_output_dir(config, sample_data_output_dir)
-                if generated_dir.resolve() != resolved_source.resolve():
-                    logger.warning(
-                        "Generated sample data at %s but source_base_path is %s. "
-                        "Ensure CSVs are available at the source path before Bronze ingest.",
-                        generated_dir,
-                        config.source_base_path,
-                    )
-            elif is_remote_path(config.source_base_path):
-                logger.warning(
-                    "Generated sample data at %s but source_base_path is remote (%s). "
-                    "On Databricks, use --sample-data-output-dir and ensure upload to DBFS, "
-                    "or generate in the notebook before running the pipeline.",
-                    generated_dir,
-                    config.source_base_path,
-                )
 
         if validate_sample_data:
             summary.steps_completed.append("validate_sample_data")

@@ -4,6 +4,10 @@ from __future__ import annotations
 
 import pytest
 
+from config.databricks_runtime import (
+    DEFAULT_DBFS_SAMPLE_DATA_PATH,
+    prepare_config_source_for_spark,
+)
 from config.pipeline_config import load_config
 from run_pipeline import (
     PipelineConfigurationError,
@@ -53,3 +57,29 @@ def test_validate_configuration_rejects_file_tmp_on_databricks(monkeypatch) -> N
     config = load_config(source_base_path="file:/tmp/ecommerce_medallion_sample_data")
     with pytest.raises(PipelineConfigurationError, match="not readable by Spark on Databricks"):
         validate_configuration(config)
+
+
+def test_prepare_config_uploads_and_rewrites_local_path(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv("DATABRICKS_RUNTIME_VERSION", "1.0")
+
+    for name in ("customers.csv", "products.csv", "orders.csv"):
+        (tmp_path / name).write_text("x\n", encoding="utf-8")
+
+    config = load_config(source_base_path=f"file:{tmp_path.as_posix()}")
+    uploads: list[tuple[str, str]] = []
+
+    def _fake_upload(local_dir: str, dbfs_base: str, spark) -> None:
+        uploads.append((local_dir, dbfs_base))
+
+    monkeypatch.setattr(
+        "config.databricks_runtime.upload_local_csvs_to_dbfs",
+        _fake_upload,
+    )
+
+    prepared = prepare_config_source_for_spark(
+        spark=object(),
+        config=config,
+        local_csv_dir=str(tmp_path),
+    )
+    assert prepared.source_base_path == DEFAULT_DBFS_SAMPLE_DATA_PATH
+    assert uploads == [(str(tmp_path), DEFAULT_DBFS_SAMPLE_DATA_PATH)]
