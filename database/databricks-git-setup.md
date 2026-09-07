@@ -75,20 +75,36 @@ Delete the Repo in the UI and **Add Repo** again with the same GitHub URL and br
 
 ## 4. Run the Pipeline from the Repo
 
-### A. Upload seed CSVs to DBFS (one time per reset)
+### A. Stage seed CSVs (one time per reset)
 
-Generate locally or on the cluster, then place files at the default path:
+**Recommended (serverless / FileStore disabled):** generate into the repo `data/` folder — Spark can read `file:/Workspace/Repos/.../data` on serverless.
+
+```python
+# In notebooks/run_full_pipeline.ipynb — set generate_sample_data=true and run all cells.
+# Or from a cluster notebook after resolving REPO_ROOT:
+from pathlib import Path
+from data_generation.generate_sample_data import write_sample_datasets, DEFAULT_SEED
+
+DATA_DIR = Path(REPO_ROOT) / "data"
+DATA_DIR.mkdir(parents=True, exist_ok=True)
+write_sample_datasets(DATA_DIR, seed=42)
+source_base_path = DATA_DIR.resolve().as_uri()  # e.g. file:/Workspace/Repos/.../data
+```
+
+**Alternative (workspaces with public DBFS enabled):**
 
 ```bash
 # Local (laptop)
 python src/data_generation/generate_sample_data.py --output-dir ./data --seed 42
 
-# Databricks CLI (from laptop, after configuring CLI)
+# Databricks CLI
 databricks fs mkdirs dbfs:/FileStore/ecommerce/data
 databricks fs cp ./data/customers.csv dbfs:/FileStore/ecommerce/data/customers.csv
 databricks fs cp ./data/products.csv  dbfs:/FileStore/ecommerce/data/products.csv
 databricks fs cp ./data/orders.csv    dbfs:/FileStore/ecommerce/data/orders.csv
 ```
+
+**Unity Catalog volume (production-style):** set `PIPELINE_SOURCE_BASE_PATH` or the notebook widget to e.g. `/Volumes/catalog/schema/volume/ecommerce/data/`.
 
 ### B. Run full pipeline on a cluster
 
@@ -203,9 +219,10 @@ print("Repo files present")
 | Cannot add Repo | Link GitHub under **User Settings** → **Linked accounts** |
 | Pull shows no changes | Confirm push reached GitHub; check branch is `main` |
 | `ModuleNotFoundError: config` | `sys.path.insert(0, ".../src")` or run from repo root with `PYTHONPATH=src` |
-| `Source file not found` | Upload CSVs to `dbfs:/FileStore/ecommerce/data` |
+| `Source file not found` | Generate CSVs into `{REPO_ROOT}/data` (`generate_sample_data=true` in notebook) or upload to your configured path |
+| `[DBFS_DISABLED] Public DBFS root is disabled` / `/FileStore/...` | Pull latest `main`; use repo `data/` path (notebook default) or a UC volume — not `dbfs:/FileStore/...` |
 | `[JVM_ATTRIBUTE_NOT_SUPPORTED] spark._jvm` | Pull latest `main` (Bronze `path_exists` is serverless-safe) or use a dedicated cluster |
-| `LocalFilesystemAccessDeniedException` / `file:/tmp` | Set `source_base_path` to `dbfs:/FileStore/ecommerce/data`; use `generate_sample_data=true` in the notebook |
+| `LocalFilesystemAccessDeniedException` / `file:/tmp` | Use `{REPO_ROOT}/data` (`file:/Workspace/Repos/.../data`); set `generate_sample_data=true` in the notebook |
 | Permission denied on push from Databricks | Use PAT with repo scope or push from local git only |
 
 ---

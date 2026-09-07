@@ -7,6 +7,7 @@ import pytest
 from config.databricks_runtime import (
     DEFAULT_DBFS_SAMPLE_DATA_PATH,
     prepare_config_source_for_spark,
+    workspace_data_path,
 )
 from config.pipeline_config import load_config
 from run_pipeline import (
@@ -59,13 +60,46 @@ def test_validate_configuration_rejects_file_tmp_on_databricks(monkeypatch) -> N
         validate_configuration(config)
 
 
-def test_prepare_config_uploads_and_rewrites_local_path(tmp_path, monkeypatch) -> None:
+def test_validate_configuration_rejects_filestore_on_databricks(monkeypatch) -> None:
+    monkeypatch.setenv("DATABRICKS_RUNTIME_VERSION", "14.3.x-scala2.12")
+    config = load_config(source_base_path=DEFAULT_DBFS_SAMPLE_DATA_PATH)
+    with pytest.raises(PipelineConfigurationError, match="FileStore"):
+        validate_configuration(config, spark=object())
+
+
+def test_prepare_config_stages_to_workspace_repo_data(tmp_path, monkeypatch) -> None:
     monkeypatch.setenv("DATABRICKS_RUNTIME_VERSION", "1.0")
 
+    repo_root = tmp_path / "repo"
+    repo_root.mkdir()
+    staging = tmp_path / "staging"
+    staging.mkdir()
     for name in ("customers.csv", "products.csv", "orders.csv"):
-        (tmp_path / name).write_text("x\n", encoding="utf-8")
+        (staging / name).write_text("x\n", encoding="utf-8")
 
-    config = load_config(source_base_path=f"file:{tmp_path.as_posix()}")
+    config = load_config(source_base_path=DEFAULT_DBFS_SAMPLE_DATA_PATH)
+    prepared = prepare_config_source_for_spark(
+        spark=object(),
+        config=config,
+        local_csv_dir=str(staging),
+        repo_root=str(repo_root),
+    )
+
+    data_dir = repo_root / "data"
+    assert data_dir.is_dir()
+    assert all((data_dir / name).exists() for name in ("customers.csv", "products.csv", "orders.csv"))
+    assert prepared.source_base_path == workspace_data_path(str(repo_root))
+
+
+def test_prepare_config_uploads_to_dbfs_when_no_repo_root(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv("DATABRICKS_RUNTIME_VERSION", "1.0")
+
+    staging = tmp_path / "staging"
+    staging.mkdir()
+    for name in ("customers.csv", "products.csv", "orders.csv"):
+        (staging / name).write_text("x\n", encoding="utf-8")
+
+    config = load_config(source_base_path=DEFAULT_DBFS_SAMPLE_DATA_PATH)
     uploads: list[tuple[str, str]] = []
 
     def _fake_upload(local_dir: str, dbfs_base: str, spark) -> None:
@@ -79,7 +113,7 @@ def test_prepare_config_uploads_and_rewrites_local_path(tmp_path, monkeypatch) -
     prepared = prepare_config_source_for_spark(
         spark=object(),
         config=config,
-        local_csv_dir=str(tmp_path),
+        local_csv_dir=str(staging),
     )
     assert prepared.source_base_path == DEFAULT_DBFS_SAMPLE_DATA_PATH
-    assert uploads == [(str(tmp_path), DEFAULT_DBFS_SAMPLE_DATA_PATH)]
+    assert uploads == [(str(staging), DEFAULT_DBFS_SAMPLE_DATA_PATH)]

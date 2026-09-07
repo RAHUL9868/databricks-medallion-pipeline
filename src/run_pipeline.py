@@ -454,6 +454,7 @@ def run_pipeline(
     sample_data_seed: int = DEFAULT_SEED,
     sample_data_output_dir: Optional[str] = None,
     spark: Optional[SparkSession] = None,
+    repo_root: Optional[str] = None,
 ) -> PipelineRunSummary:
     """
     Execute the full Medallion pipeline in order.
@@ -482,6 +483,7 @@ def run_pipeline(
         spark,
         config,
         local_csv_dir=str(generated_dir) if generated_dir is not None else None,
+        repo_root=repo_root,
     )
     validate_configuration(config, spark=spark)
 
