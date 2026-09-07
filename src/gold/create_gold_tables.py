@@ -38,6 +38,118 @@ logger = logging.getLogger(__name__)
 
 REVENUE_TOLERANCE = Decimal("0.01")
 COMPLETED_STATUS = "Completed"
+RECONCILIATION_LOGIC_VERSION = "v2-sql-baseline"
+
+# Mirrors src/gold/02_revenue_by_customer.sql grain (valid_customers LEFT JOIN order metrics).
+SILVER_CUSTOMER_REVENUE_SQL = """
+WITH valid_customers AS (
+    SELECT customer_id
+    FROM (
+        SELECT
+            customer_id,
+            ROW_NUMBER() OVER (
+                PARTITION BY customer_id
+                ORDER BY _source_row_num
+            ) AS row_rank
+        FROM silver_customers
+        WHERE dq_is_valid = true
+          AND customer_id IS NOT NULL
+    ) ranked
+    WHERE row_rank = 1
+),
+qualifying_orders AS (
+    SELECT
+        order_id,
+        customer_id,
+        CAST(total_amount AS DECIMAL(18, 2)) AS total_amount,
+        _source_row_num
+    FROM silver_orders
+    WHERE dq_is_valid = true
+      AND order_status = 'Completed'
+      AND customer_id IS NOT NULL
+      AND total_amount IS NOT NULL
+),
+deduplicated_orders AS (
+    SELECT order_id, customer_id, total_amount
+    FROM (
+        SELECT
+            order_id,
+            customer_id,
+            total_amount,
+            ROW_NUMBER() OVER (
+                PARTITION BY order_id
+                ORDER BY _source_row_num
+            ) AS row_rank
+        FROM qualifying_orders
+    ) ranked
+    WHERE row_rank = 1
+),
+customer_order_metrics AS (
+    SELECT
+        customer_id,
+        CAST(SUM(total_amount) AS DECIMAL(18, 2)) AS total_revenue
+    FROM deduplicated_orders
+    GROUP BY customer_id
+)
+SELECT CAST(
+    SUM(COALESCE(m.total_revenue, CAST(0 AS DECIMAL(18, 2))))
+    AS DECIMAL(18, 2)
+) AS value
+FROM valid_customers AS c
+LEFT JOIN customer_order_metrics AS m
+    ON c.customer_id = m.customer_id
+"""
+
+# Mirrors src/gold/01_sales_by_product.sql grain (valid_products LEFT JOIN order metrics).
+SILVER_PRODUCT_REVENUE_SQL = """
+WITH valid_products AS (
+    SELECT product_id
+    FROM silver_products
+    WHERE dq_is_valid = true
+      AND product_id IS NOT NULL
+),
+qualifying_orders AS (
+    SELECT
+        order_id,
+        product_id,
+        CAST(total_amount AS DECIMAL(18, 2)) AS total_amount,
+        _source_row_num
+    FROM silver_orders
+    WHERE dq_is_valid = true
+      AND order_status = 'Completed'
+      AND product_id IS NOT NULL
+      AND total_amount IS NOT NULL
+),
+deduplicated_orders AS (
+    SELECT order_id, product_id, total_amount
+    FROM (
+        SELECT
+            order_id,
+            product_id,
+            total_amount,
+            ROW_NUMBER() OVER (
+                PARTITION BY order_id
+                ORDER BY _source_row_num
+            ) AS row_rank
+        FROM qualifying_orders
+    ) ranked
+    WHERE row_rank = 1
+),
+product_order_metrics AS (
+    SELECT
+        product_id,
+        CAST(SUM(total_amount) AS DECIMAL(18, 2)) AS total_revenue
+    FROM deduplicated_orders
+    GROUP BY product_id
+)
+SELECT CAST(
+    SUM(COALESCE(m.total_revenue, CAST(0 AS DECIMAL(18, 2))))
+    AS DECIMAL(18, 2)
+) AS value
+FROM valid_products AS p
+LEFT JOIN product_order_metrics AS m
+    ON p.product_id = m.product_id
+"""
 
 GOLD_SQL_DIR = Path(__file__).resolve().parent
 
@@ -270,6 +382,15 @@ def _sum_gold_revenue(spark: SparkSession, qualified_table: str, column: str = "
     return Decimal(str(total)).quantize(Decimal("0.01"))
 
 
+def _sum_sql_revenue_scalar(spark: SparkSession, config: PipelineConfig, sql: str) -> Decimal:
+    """Run a Gold-equivalent Silver revenue query and return a DECIMAL(18,2) total."""
+    set_sql_context(spark, config)
+    value = spark.sql(sql).first()["value"]
+    if value is None:
+        return Decimal("0.00")
+    return Decimal(str(value)).quantize(Decimal("0.01"))
+
+
 def _assert_revenue_match(
     check_name: str,
     gold_total: Decimal,
@@ -328,39 +449,38 @@ def run_reconciliation_checks(
     gold_tables: Dict[str, str],
 ) -> None:
     """Validate Gold outputs against Silver baselines and grain constraints."""
+    logger.info("Running Gold reconciliation checks logic=%s", RECONCILIATION_LOGIC_VERSION)
     sales_table = gold_tables["sales_by_product"]
     customer_table = gold_tables["revenue_by_customer"]
     trends_table = gold_tables["daily_weekly_trends"]
     segmentation_table = gold_tables["customer_segmentation"]
 
     gold_product_revenue = _sum_gold_revenue(spark, sales_table)
-    silver_product_revenue = silver_qualifying_revenue(
+    silver_product_revenue = _sum_sql_revenue_scalar(
         spark,
         config,
-        require_product_id=True,
-        require_valid_product=True,
+        SILVER_PRODUCT_REVENUE_SQL,
     )
     _assert_revenue_match(
         "sales_by_product_revenue",
         gold_product_revenue,
         silver_product_revenue,
-        "SUM(gold_sales_by_product.total_revenue) vs qualifying Silver orders "
-        "with valid product_id",
+        "SUM(gold_sales_by_product.total_revenue) vs Silver SQL baseline "
+        "(valid products LEFT JOIN order metrics)",
     )
 
     gold_customer_revenue = _sum_gold_revenue(spark, customer_table)
-    silver_customer_revenue = silver_qualifying_revenue(
+    silver_customer_revenue = _sum_sql_revenue_scalar(
         spark,
         config,
-        require_customer_id=True,
-        require_valid_customer=True,
+        SILVER_CUSTOMER_REVENUE_SQL,
     )
     _assert_revenue_match(
         "revenue_by_customer_revenue",
         gold_customer_revenue,
         silver_customer_revenue,
-        "SUM(gold_revenue_by_customer.total_revenue) vs qualifying Silver orders "
-        "with valid customer_id",
+        "SUM(gold_revenue_by_customer.total_revenue) vs Silver SQL baseline "
+        "(valid customers LEFT JOIN order metrics)",
     )
 
     gold_daily_revenue = (
