@@ -38,7 +38,6 @@ import argparse
 import logging
 import sys
 import time
-from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, List, Optional, Sequence, Tuple
 
@@ -51,6 +50,7 @@ if str(_SRC_ROOT) not in sys.path:
     sys.path.insert(0, str(_SRC_ROOT))
 
 sys.modules.setdefault(_pipeline_config_module.__name__, _pipeline_config_module)
+sys.modules.setdefault(__name__, sys.modules[__name__])
 
 from bronze.bronze_ingest import (
     BronzeIngestError,
@@ -110,20 +110,32 @@ class PipelineConfigurationError(PipelineError):
     """Raised when configuration is invalid before execution starts."""
 
 
-@dataclass
 class PipelineRunSummary:
     """High-level counters collected during the run."""
 
-    run_id: str
-    batch_id: str
-    schema_name: str
-    catalog: Optional[str]
-    source_base_path: str
-    steps_completed: List[str] = field(default_factory=list)
-    bronze_row_counts: Dict[str, int] = field(default_factory=dict)
-    silver_row_counts: Dict[str, int] = field(default_factory=dict)
-    gold_row_counts: Dict[str, int] = field(default_factory=dict)
-    elapsed_seconds: float = 0.0
+    def __init__(
+        self,
+        run_id: str,
+        batch_id: str,
+        schema_name: str,
+        catalog: Optional[str],
+        source_base_path: str,
+        steps_completed: Optional[List[str]] = None,
+        bronze_row_counts: Optional[Dict[str, int]] = None,
+        silver_row_counts: Optional[Dict[str, int]] = None,
+        gold_row_counts: Optional[Dict[str, int]] = None,
+        elapsed_seconds: float = 0.0,
+    ) -> None:
+        self.run_id = run_id
+        self.batch_id = batch_id
+        self.schema_name = schema_name
+        self.catalog = catalog
+        self.source_base_path = source_base_path
+        self.steps_completed = steps_completed if steps_completed is not None else []
+        self.bronze_row_counts = bronze_row_counts if bronze_row_counts is not None else {}
+        self.silver_row_counts = silver_row_counts if silver_row_counts is not None else {}
+        self.gold_row_counts = gold_row_counts if gold_row_counts is not None else {}
+        self.elapsed_seconds = elapsed_seconds
 
 
 def is_remote_path(path: str) -> bool:
