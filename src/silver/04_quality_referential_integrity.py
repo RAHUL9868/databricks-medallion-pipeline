@@ -200,7 +200,7 @@ def apply_referential_integrity_checks(
             parent_keys,
             F.col(rule.fk_column) == F.col(rule.parent_key_alias),
             how="left",
-        ).drop(rule.parent_key_alias)
+        ).withColumnRenamed(rule.parent_key_alias, match_column)
 
     orphan_conditions = [
         orphan_foreign_key_condition(rule.fk_column, match_columns[rule.rule_id])
@@ -294,7 +294,7 @@ def compute_referential_integrity_metrics(
             parent_keys,
             F.col(rule.fk_column) == F.col(rule.parent_key_alias),
             how="left",
-        ).drop(rule.parent_key_alias)
+        ).withColumnRenamed(rule.parent_key_alias, match_column)
 
     agg_exprs = [F.count(F.lit(1)).alias("total_rows")]
     for rule in rules:
