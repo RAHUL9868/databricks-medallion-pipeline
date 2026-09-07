@@ -593,7 +593,11 @@ python src/run_pipeline.py --generate-sample-data --source-base-path ./data --sc
 python -m pytest tests/ -v
 ```
 
-On **Databricks**, upload CSVs to DBFS, attach this repo to a cluster, then:
+On **Databricks**, upload CSVs to DBFS, attach this repo to a cluster, then either:
+
+**Option A — Notebook (recommended):** open `notebooks/run_full_pipeline.ipynb`, set widgets, run all cells.
+
+**Option B — CLI on the cluster:**
 
 ```bash
 python src/run_pipeline.py --schema ecommerce --source-base-path dbfs:/FileStore/ecommerce/data

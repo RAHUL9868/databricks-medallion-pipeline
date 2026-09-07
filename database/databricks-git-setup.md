@@ -92,6 +92,8 @@ databricks fs cp ./data/orders.csv    dbfs:/FileStore/ecommerce/data/orders.csv
 
 ### B. Run full pipeline on a cluster
 
+**Notebook (recommended):** open `notebooks/run_full_pipeline.ipynb` from the Repo, attach an all-purpose cluster, set widgets, and run all cells.
+
 **Notebook** (attach all-purpose cluster):
 
 ```python
