@@ -19,6 +19,26 @@ This guide walks through building the e-commerce analytics dashboard in **Databr
 
 ---
 
+## Dashboard export PDFs (assignment proof)
+
+Exported screenshots from the **published** Databricks dashboard (2026-09-07). Open these files in the repo to review the three required visuals without signing in to Databricks:
+
+| # | Visualization | PDF file |
+|---|---------------|----------|
+| 1 | Top 10 Products by Revenue | [`exports/dashboard-01-top-10-products-by-revenue.pdf`](exports/dashboard-01-top-10-products-by-revenue.pdf) |
+| 2 | Customer Revenue Distribution | [`exports/dashboard-02-customer-revenue-distribution.pdf`](exports/dashboard-02-customer-revenue-distribution.pdf) |
+| 3 | Customer Segmentation by Behavior | [`exports/dashboard-03-customer-segmentation.pdf`](exports/dashboard-03-customer-segmentation.pdf) |
+
+**Original export filenames (Downloads):**
+
+- `Dashboards 2026-09-07 12_42.pdf` → Top 10 Products
+- `Dashboards 2026-09-07 12_43.pdf` → Customer Revenue Distribution
+- `Dashboards 2026-09-07 12_41.pdf` → Customer Segmentation
+
+**Live dashboard:** https://dbc-6a498a86-07f2.cloud.databricks.com/dashboardsv3/01f1aab7db5713f8a43e09512edcaa70/published?o=7474655649363572
+
+---
+
 ## 1. Required Gold Tables
 
 All dashboard queries read from these four Gold tables (created by `create_gold_tables.py`):

@@ -46,7 +46,16 @@ https://dbc-6a498a86-07f2.cloud.databricks.com/dashboardsv3/01f1aab7db5713f8a43e
 | Dashboard SQL queries | `src/dashboard/dashboard_queries.sql` |
 | Setup and validation guide | `src/dashboard/DASHBOARD_GUIDE.md` |
 | Notebook preview (optional) | `notebooks/databricks_dashboard_preview.ipynb` |
-| PDF deliverable | `src/dashboard/E-Commerce-Gold-Analytics-Dashboard.pdf` |
+| PDF deliverable (summary) | `src/dashboard/E-Commerce-Gold-Analytics-Dashboard.pdf` |
+| **Exported dashboard PDFs** | `src/dashboard/exports/` |
+
+### Exported dashboard PDFs (review these)
+
+| Visualization | File |
+|---------------|------|
+| Top 10 Products by Revenue | `src/dashboard/exports/dashboard-01-top-10-products-by-revenue.pdf` |
+| Customer Revenue Distribution | `src/dashboard/exports/dashboard-02-customer-revenue-distribution.pdf` |
+| Customer Segmentation | `src/dashboard/exports/dashboard-03-customer-segmentation.pdf` |
 
 ---
 
