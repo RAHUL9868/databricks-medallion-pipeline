@@ -198,6 +198,20 @@ def apply_uniqueness_checks(
     return result
 
 
+def _with_duplicate_metric_columns(
+    df: DataFrame,
+    rules: Sequence[UniquenessRule],
+) -> DataFrame:
+    """Materialize per-rule duplicate flags before aggregation (Spark Connect safe)."""
+    result = df
+    for rule in rules:
+        result = result.withColumn(
+            f"_metric_dup_{rule.rule_id}",
+            F.when(duplicate_membership_condition(rule.column), F.lit(1)).otherwise(F.lit(0)),
+        )
+    return result
+
+
 def compute_uniqueness_metrics(
     df: DataFrame,
     entity: str,
@@ -209,15 +223,14 @@ def compute_uniqueness_metrics(
         raise ValueError(f"No uniqueness rules configured for entity '{entity}'.")
 
     evaluated_at = datetime.now(timezone.utc)
+    flagged = _with_duplicate_metric_columns(df, rules)
     agg_exprs = [F.count(F.lit(1)).alias("total_rows")]
     for rule in rules:
         agg_exprs.append(
-            F.sum(
-                F.when(duplicate_membership_condition(rule.column), F.lit(1)).otherwise(F.lit(0)),
-            ).alias(rule.rule_id),
+            F.sum(F.col(f"_metric_dup_{rule.rule_id}")).alias(rule.rule_id),
         )
 
-    totals = df.agg(*agg_exprs)
+    totals = flagged.agg(*agg_exprs)
     total_rows = F.col("total_rows")
 
     metric_frames: List[DataFrame] = []
