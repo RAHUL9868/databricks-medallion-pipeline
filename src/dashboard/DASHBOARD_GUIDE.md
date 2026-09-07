@@ -103,6 +103,12 @@ For each visualization:
 4. **Optional:** add **field filters** on `category`, `customer_segment`, or `period_start_date` for interactive filtering.
 5. Arrange tiles and save the dashboard.
 
+### Published dashboard (this project)
+
+- **URL:** https://dbc-6a498a86-07f2.cloud.databricks.com/dashboardsv3/01f1aab7db5713f8a43e09512edcaa70/published?o=7474655649363572
+- **Deliverable PDF:** `src/dashboard/E-Commerce-Gold-Analytics-Dashboard.pdf`
+- **Deliverable notes:** `src/dashboard/DASHBOARD_DELIVERABLE.md`
+
 ---
 
 ## 3. Required Visualizations

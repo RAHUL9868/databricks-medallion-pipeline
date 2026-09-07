@@ -476,6 +476,8 @@ The Dashboard is **not** created by code. Set it up manually in Databricks SQL u
 
 - **Queries:** `src/dashboard/dashboard_queries.sql`
 - **Guide:** `src/dashboard/DASHBOARD_GUIDE.md`
+- **Published dashboard:** [E-Commerce Gold Analytics](https://dbc-6a498a86-07f2.cloud.databricks.com/dashboardsv3/01f1aab7db5713f8a43e09512edcaa70/published?o=7474655649363572)
+- **Deliverable (PDF):** `src/dashboard/E-Commerce-Gold-Analytics-Dashboard.pdf`
 
 ### Required visualizations
 
