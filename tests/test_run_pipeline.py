@@ -6,6 +6,7 @@ import pytest
 
 from config.databricks_runtime import (
     DEFAULT_DBFS_SAMPLE_DATA_PATH,
+    detect_databricks_repo_root,
     prepare_config_source_for_spark,
     workspace_data_path,
 )
@@ -91,8 +92,41 @@ def test_prepare_config_stages_to_workspace_repo_data(tmp_path, monkeypatch) -> 
     assert prepared.source_base_path == workspace_data_path(str(repo_root))
 
 
-def test_prepare_config_uploads_to_dbfs_when_no_repo_root(tmp_path, monkeypatch) -> None:
+def test_prepare_config_rewrites_filestore_when_repo_root_detected(tmp_path, monkeypatch) -> None:
     monkeypatch.setenv("DATABRICKS_RUNTIME_VERSION", "1.0")
+    monkeypatch.setenv("PIPELINE_REPO_ROOT", str(tmp_path))
+    (tmp_path / "src").mkdir()
+
+    config = load_config(source_base_path=DEFAULT_DBFS_SAMPLE_DATA_PATH)
+    prepared = prepare_config_source_for_spark(spark=object(), config=config)
+    assert prepared.source_base_path == workspace_data_path(str(tmp_path))
+
+
+def test_detect_databricks_repo_root_from_env(tmp_path, monkeypatch) -> None:
+    (tmp_path / "src").mkdir()
+    monkeypatch.setenv("PIPELINE_REPO_ROOT", str(tmp_path))
+    assert detect_databricks_repo_root() == str(tmp_path.resolve())
+
+
+def test_prepare_config_raises_when_filestore_on_databricks_without_repo(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv("DATABRICKS_RUNTIME_VERSION", "1.0")
+
+    staging = tmp_path / "staging"
+    staging.mkdir()
+    for name in ("customers.csv", "products.csv", "orders.csv"):
+        (staging / name).write_text("x\n", encoding="utf-8")
+
+    config = load_config(source_base_path=DEFAULT_DBFS_SAMPLE_DATA_PATH)
+    with pytest.raises(ValueError, match="FileStore"):
+        prepare_config_source_for_spark(
+            spark=object(),
+            config=config,
+            local_csv_dir=str(staging),
+        )
+
+
+def test_prepare_config_uploads_to_dbfs_when_not_on_databricks(tmp_path, monkeypatch) -> None:
+    monkeypatch.delenv("DATABRICKS_RUNTIME_VERSION", raising=False)
 
     staging = tmp_path / "staging"
     staging.mkdir()

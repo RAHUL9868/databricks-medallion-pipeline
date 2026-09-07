@@ -15,8 +15,9 @@ from pyspark.sql import SparkSession
 
 logger = logging.getLogger(__name__)
 
-# Legacy default for workspaces with public DBFS enabled.
+# Legacy path for workspaces with public DBFS enabled (do not use on serverless).
 DEFAULT_DBFS_SAMPLE_DATA_PATH = "dbfs:/FileStore/ecommerce/data"
+DEFAULT_LOCAL_SAMPLE_DATA_PATH = "./data"
 
 _REMOTE_PATH_PREFIXES = ("dbfs:", "s3:", "abfss:", "gs:", "wasbs:", "hdfs:")
 _CSV_NAMES = ("customers.csv", "products.csv", "orders.csv")
@@ -85,6 +86,63 @@ def workspace_data_path(repo_root: str) -> str:
     return data_dir.resolve().as_uri()
 
 
+def _looks_like_repo_root(path: Path) -> bool:
+    """Return True when ``path`` appears to be this project's repository root."""
+    return (path / "src").is_dir()
+
+
+def detect_databricks_repo_root(spark: Optional[SparkSession] = None) -> Optional[str]:
+    """
+    Best-effort detection of the Git repo root on Databricks.
+
+    Checks ``PIPELINE_REPO_ROOT``, the active notebook path, then walks upward
+    from the current working directory.
+    """
+    env_root = os.environ.get("PIPELINE_REPO_ROOT", "").strip()
+    if env_root:
+        root = Path(env_root)
+        if _looks_like_repo_root(root):
+            return str(root.resolve())
+
+    if spark is None:
+        try:
+            from pyspark.sql import SparkSession as _SparkSession
+
+            spark = _SparkSession.getActiveSession()
+        except Exception:
+            spark = None
+
+    if spark is not None:
+        try:
+            from pyspark.dbutils import DBUtils
+
+            dbutils = DBUtils(spark)
+            notebook_path = (
+                dbutils.notebook.entry_point.getDbutils()
+                .notebook()
+                .getContext()
+                .notebookPath()
+                .get()
+            )
+            if notebook_path:
+                repo_rel = os.path.dirname(os.path.dirname(notebook_path))
+                repo_root = (
+                    f"/Workspace{repo_rel}"
+                    if not repo_rel.startswith("/Workspace")
+                    else repo_rel
+                )
+                if _looks_like_repo_root(Path(repo_root)):
+                    return repo_root
+        except Exception:
+            pass
+
+    for parent in (Path.cwd(), *Path.cwd().parents):
+        if _looks_like_repo_root(parent):
+            return str(parent.resolve())
+
+    return None
+
+
 def is_databricks_runtime(spark: Optional[SparkSession] = None) -> bool:
     """
     Return True when executing on Databricks (including serverless).
@@ -121,6 +179,15 @@ def is_databricks_runtime(spark: Optional[SparkSession] = None) -> bool:
     return False
 
 
+def _filestore_unavailable_message(configured_path: str) -> str:
+    return (
+        f"Source path '{configured_path}' uses public DBFS FileStore, which is disabled "
+        "on this workspace. Pull the latest repo, run notebooks/run_full_pipeline.ipynb "
+        "(cells 1–4), or set PIPELINE_SOURCE_BASE_PATH to "
+        "file:/Workspace/Repos/<user>/databricks-medallion-pipeline/data"
+    )
+
+
 def assert_spark_readable_source_path(path: str, spark: Optional[SparkSession] = None) -> None:
     """
     Fail fast when a Databricks runtime is configured with a blocked local path.
@@ -137,14 +204,14 @@ def assert_spark_readable_source_path(path: str, spark: Optional[SparkSession] =
             "volume, or set PIPELINE_SOURCE_BASE_PATH to an allowed location."
         )
     if is_legacy_filestore_path(path):
-        raise ValueError(
-            f"Source path '{path}' uses public DBFS FileStore, which may be disabled. "
-            "Use the repo data folder or set PIPELINE_SOURCE_BASE_PATH to a UC volume path."
-        )
+        raise ValueError(_filestore_unavailable_message(path))
 
 
 def upload_local_csvs_to_dbfs(local_dir: str, dbfs_base: str, spark: SparkSession) -> None:
     """Copy generated sample CSV files from driver-local disk to DBFS via DBUtils."""
+    if is_legacy_filestore_path(dbfs_base) and is_databricks_runtime(spark):
+        raise ValueError(_filestore_unavailable_message(dbfs_base))
+
     from pyspark.dbutils import DBUtils
 
     dbutils = DBUtils(spark)
@@ -170,21 +237,16 @@ def stage_local_csvs_for_ingest(
     Returns the ``source_base_path`` to use for Bronze reads.
     """
     target_base = target_base.rstrip("/")
+    effective_repo_root = repo_root or detect_databricks_repo_root(spark)
 
-    if is_legacy_filestore_path(target_base) and repo_root:
-        try:
+    if is_legacy_filestore_path(target_base):
+        if is_databricks_runtime(spark):
+            if not effective_repo_root:
+                raise ValueError(_filestore_unavailable_message(target_base))
+            target_base = workspace_data_path(effective_repo_root)
+        else:
             upload_local_csvs_to_dbfs(local_dir, target_base, spark)
             return target_base
-        except Exception as exc:
-            message = str(exc)
-            if "DBFS_DISABLED" in message or "DbfsDisabled" in message or "FileStore" in message:
-                logger.warning(
-                    "Public DBFS FileStore is disabled; staging CSVs under repo data/: %s",
-                    repo_root,
-                )
-                target_base = workspace_data_path(repo_root)
-            else:
-                raise
 
     local_target = local_filesystem_path(target_base)
     if local_target is not None:
@@ -202,14 +264,25 @@ def stage_local_csvs_for_ingest(
 def resolve_databricks_source_base_path(
     configured_path: str,
     repo_root: Optional[str],
+    spark: Optional[SparkSession] = None,
 ) -> str:
     """Pick a serverless-safe source path when the configured default is not usable."""
-    if repo_root and (
+    if not is_databricks_runtime(spark):
+        return configured_path
+
+    effective_repo_root = repo_root or detect_databricks_repo_root(spark)
+    needs_workspace = (
         is_legacy_filestore_path(configured_path)
-        or is_unreadable_local_path_on_databricks(configured_path)
         or configured_path == DEFAULT_DBFS_SAMPLE_DATA_PATH
-    ):
-        return workspace_data_path(repo_root)
+        or is_unreadable_local_path_on_databricks(configured_path)
+    )
+
+    if needs_workspace:
+        if effective_repo_root:
+            return workspace_data_path(effective_repo_root)
+        if is_legacy_filestore_path(configured_path) or configured_path == DEFAULT_DBFS_SAMPLE_DATA_PATH:
+            raise ValueError(_filestore_unavailable_message(configured_path))
+
     return configured_path
 
 
@@ -230,7 +303,12 @@ def prepare_config_source_for_spark(
     if not is_databricks_runtime(spark):
         return config
 
-    target_base = resolve_databricks_source_base_path(config.source_base_path, repo_root)
+    effective_repo_root = repo_root or detect_databricks_repo_root(spark)
+    target_base = resolve_databricks_source_base_path(
+        config.source_base_path,
+        effective_repo_root,
+        spark=spark,
+    )
 
     candidate_dirs: list[Path] = []
     if local_csv_dir:
@@ -247,7 +325,7 @@ def prepare_config_source_for_spark(
                 str(local_dir),
                 target_base,
                 spark,
-                repo_root=repo_root,
+                repo_root=effective_repo_root,
             )
             break
 

@@ -23,7 +23,7 @@ class PipelineConfig:
     """Runtime configuration for Bronze ingestion."""
 
     source_base_path: str = field(
-        default_factory=lambda: _env("PIPELINE_SOURCE_BASE_PATH", "dbfs:/FileStore/ecommerce/data") or "dbfs:/FileStore/ecommerce/data",
+        default_factory=lambda: _env("PIPELINE_SOURCE_BASE_PATH", "./data") or "./data",
     )
     catalog: Optional[str] = field(default_factory=lambda: _env("PIPELINE_CATALOG"))
     schema_name: str = field(

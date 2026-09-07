@@ -57,6 +57,8 @@ from bronze.bronze_ingest import (
 from config.pipeline_config import PipelineConfig, load_config
 from config.databricks_runtime import (
     assert_spark_readable_source_path,
+    detect_databricks_repo_root,
+    is_databricks_runtime,
     prepare_config_source_for_spark,
 )
 from data_generation.generate_sample_data import (
@@ -470,6 +472,11 @@ def run_pipeline(
     """
     started = time.monotonic()
     spark = get_spark(spark)
+
+    if repo_root is None and is_databricks_runtime(spark):
+        repo_root = detect_databricks_repo_root(spark)
+        if repo_root:
+            logger.info("Detected Databricks repo root: %s", repo_root)
 
     generated_dir: Optional[Path] = None
     if generate_sample_data_flag:
