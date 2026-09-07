@@ -205,6 +205,7 @@ print("Repo files present")
 | `ModuleNotFoundError: config` | `sys.path.insert(0, ".../src")` or run from repo root with `PYTHONPATH=src` |
 | `Source file not found` | Upload CSVs to `dbfs:/FileStore/ecommerce/data` |
 | `[JVM_ATTRIBUTE_NOT_SUPPORTED] spark._jvm` | Pull latest `main` (Bronze `path_exists` is serverless-safe) or use a dedicated cluster |
+| `LocalFilesystemAccessDeniedException` / `file:/tmp` | Set `source_base_path` to `dbfs:/FileStore/ecommerce/data`; use `generate_sample_data=true` in the notebook |
 | Permission denied on push from Databricks | Use PAT with repo scope or push from local git only |
 
 ---

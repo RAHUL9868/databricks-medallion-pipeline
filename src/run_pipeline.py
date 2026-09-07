@@ -55,6 +55,11 @@ from bronze.bronze_ingest import (
     validate_source_file,
 )
 from config.pipeline_config import PipelineConfig, load_config
+from config.databricks_runtime import (
+    assert_spark_readable_source_path,
+    is_databricks_runtime,
+    upload_local_csvs_to_dbfs,
+)
 from data_generation.generate_sample_data import (
     CUSTOMER_TOTAL_COUNT,
     ORDER_TOTAL_COUNT,
@@ -154,6 +159,11 @@ def validate_configuration(config: PipelineConfig) -> None:
         raise PipelineConfigurationError(
             "PIPELINE_SOURCE_BASE_PATH / source_base_path must be configured.",
         )
+
+    try:
+        assert_spark_readable_source_path(config.source_base_path)
+    except ValueError as exc:
+        raise PipelineConfigurationError(str(exc)) from exc
 
     required_tables = (
         config.bronze_customers_table,
@@ -478,7 +488,15 @@ def run_pipeline(
                 seed=sample_data_seed,
                 output_dir=sample_data_output_dir,
             )
-            if not is_remote_path(config.source_base_path):
+            if is_databricks_runtime() and is_remote_path(config.source_base_path):
+                summary.steps_completed.append("upload_sample_data_to_dbfs")
+                upload_local_csvs_to_dbfs(str(generated_dir), config.source_base_path, spark)
+                logger.info(
+                    "Uploaded generated CSVs from %s to %s",
+                    generated_dir,
+                    config.source_base_path,
+                )
+            elif not is_remote_path(config.source_base_path):
                 resolved_source = resolve_sample_data_output_dir(config, sample_data_output_dir)
                 if generated_dir.resolve() != resolved_source.resolve():
                     logger.warning(
@@ -487,6 +505,14 @@ def run_pipeline(
                         generated_dir,
                         config.source_base_path,
                     )
+            elif is_remote_path(config.source_base_path):
+                logger.warning(
+                    "Generated sample data at %s but source_base_path is remote (%s). "
+                    "On Databricks, use --sample-data-output-dir and ensure upload to DBFS, "
+                    "or generate in the notebook before running the pipeline.",
+                    generated_dir,
+                    config.source_base_path,
+                )
 
         if validate_sample_data:
             summary.steps_completed.append("validate_sample_data")

@@ -46,3 +46,10 @@ def test_resolve_sample_data_output_dir_requires_override_for_remote() -> None:
     config = load_config(source_base_path="dbfs:/FileStore/ecommerce/data")
     with pytest.raises(PipelineConfigurationError, match="sample-data-output-dir"):
         resolve_sample_data_output_dir(config, cli_output_dir=None)
+
+
+def test_validate_configuration_rejects_file_tmp_on_databricks(monkeypatch) -> None:
+    monkeypatch.setenv("DATABRICKS_RUNTIME_VERSION", "14.3.x-scala2.12")
+    config = load_config(source_base_path="file:/tmp/ecommerce_medallion_sample_data")
+    with pytest.raises(PipelineConfigurationError, match="not readable by Spark on Databricks"):
+        validate_configuration(config)
